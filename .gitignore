@@ -2,6 +2,17 @@
 __pycache__/
 *.py[codz]
 *$py.class
+# weight files
+*.pth
+
+# videos
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+*.wmv
+*.mpeg
 
 # C extensions
 *.so

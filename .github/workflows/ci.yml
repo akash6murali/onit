@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, shotdetection ]
+  pull_request:
+    branches: [ main, shotdetection ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install flake8
+
+    - name: Install ffmpeg
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Check syntax
+      run: python -m py_compile detect-shots.py transnetv2_pytorch.py
+
+    - name: Run script (if video exists)
+      run: |
+        if [ -f test/warhammer.mp4 ]; then
+          python detect-shots.py
+          if [ -s weights/out_shots.json ]; then
+            echo "Shot detection successful"
+          else
+            echo "No shots detected or output empty"
+            exit 1
+          fi
+        else
+          echo "Test video not found, skipping script run"
+        fi
