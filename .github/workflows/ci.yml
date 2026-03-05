@@ -52,7 +52,7 @@ jobs:
         python detect-shots.py
         
         # Verify the output JSON exists and is not empty
-        if [ -s shots.json ]; then
+        if [ -s out_shots.json ]; then
           echo "Integration Test Passed: shots.json created."
         else
           echo "Integration Test Failed: shots.json is missing or empty."
