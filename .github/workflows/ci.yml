@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, shotdetection ]
+  pull_request:
+    branches: [ main, shotdetection ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install flake8
+
+    - name: Install ffmpeg
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+    - name: Download assets (Weights and Test Video)
+      run: |
+        # Create directories if they don't exist
+        mkdir -p weights
+        mkdir -p test
+        
+        # Download TransNetV2 weights (Replace with your actual hosted URL)
+        curl -L -o weights/transnetv2-pytorch-weights.pth https://storage.googleapis.com/onit-test/transnetv2-pytorch-weights.pth
+        
+        # Download a small sample video for testing
+        curl -L -o test/warhammer.mp4 https://storage.googleapis.com/onit-test/big_buck_bunny.mp4
+
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Check syntax
+      run: python -m py_compile detect-shots.py transnetv2_pytorch.py
+
+    - name: Run Integration Test
+      run: |
+        # Run the detection script
+        python detect-shots.py
+        
+        # Verify the output JSON exists and is not empty
+        if [ -s out_shots.json ]; then
+          echo "Integration Test Passed: shots.json created."
+        else
+          echo "Integration Test Failed: shots.json is missing or empty."
+          exit 1
+        fi
