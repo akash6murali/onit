@@ -133,7 +133,7 @@ if __name__ == "__main__":
     frames = extract_frames(VIDEO_PATH)
     preds = run_transnetv2(frames)
     shots = predictions_to_shots(preds, 0.5)
-
+    shots = remove_dupliacte_shots(frames, shots, similarity_threshold=0.9)
     with open("out_shots.json", 'w') as fh:
                 json.dump(shots, fh)
     print("Shot list written to out_shots.json")
