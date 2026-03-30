@@ -8,6 +8,7 @@ import torch.nn as nn
 import torchvision.models as models
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 from scipy.spatial.distance import cosine
+from PIL import Image
 import ffmpeg
 
 TRANSNET_WEIGHTS = "weights/transnetv2-pytorch-weights.pth"
@@ -63,12 +64,76 @@ def predictions_to_shots(preds, threshold):
     shots.append((start, len(preds) - 1))
     return shots
 
+def build_embedding_model():
+     model = models.resnet50(pretrained=True)
+     model = nn.Sequential(*list(model.children())[:-1])  # Remove final classification layer
+     model.eval()
+     return model
+
+def get_frame_embedding(frame, model, device="cpu"):
+     frame_unit8 = (frame*255).astype(np.uint8) if frame.dtype == np.float32 else frame.astype(np.uint8)
+     pil_image = Image.fromarray(frame_unit8)
+
+     #normalize to imagenet stats and 224x224
+     transform = Compose([Resize((224, 224)), ToTensor(), Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+     frame_tensor = transform(pil_image).unsqueeze(0).to(device)
+
+     with torch.no_grad():
+         embedding = model(frame_tensor)
+     return embedding.flatten()
+
+def remove_dupliacte_shots(frames, shots, similarity_threshold=0.9):
+    if len(shots) == 0:
+        return shots
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Removing duplicate shots...")
+    embedding_model = build_embedding_model().to(device)
+    # extracting from middle frame from each of the shots
+    embeddings = []
+    for idx, (start,end) in enumerate(shots):
+        mid_framed_idx = (start + end) // 2
+        frame = frames[mid_framed_idx]
+        embedding = get_frame_embedding(frame, embedding_model, device)
+        embeddings.append(embedding)
+        print(f"\r  Processed {idx+1}/{len(shots)} shots", end="")
+    print()
+
+     # Compute pairwise cosine similarity
+    print("Computing similarity matrix...")
+    n_shots = len(embeddings)
+    similarity_matrix = np.zeros((n_shots, n_shots))
+    
+    for i in range(n_shots):
+        for j in range(i, n_shots):
+            # Cosine similarity = 1 - cosine distance
+            similarity = 1 - cosine(embeddings[i], embeddings[j])
+            similarity_matrix[i, j] = similarity
+            similarity_matrix[j, i] = similarity
+    
+    # Group shots by similarity and keep only the first from each group
+    print("Grouping similar shots...")
+    kept_shots = []
+    used = set()
+    
+    for i in range(n_shots):
+        if i in used:
+            continue
+        kept_shots.append(shots[i])
+        used.add(i)
+        # Mark all similar shots as used
+        for j in range(i + 1, n_shots):
+            if similarity_matrix[i, j] > similarity_threshold:
+                used.add(j)
+    
+    print(f"Removed {len(shots) - len(kept_shots)} duplicate shots")
+    return kept_shots
 
 if __name__ == "__main__":
     frames = extract_frames(VIDEO_PATH)
     preds = run_transnetv2(frames)
     shots = predictions_to_shots(preds, 0.5)
-
+    shots = remove_dupliacte_shots(frames, shots, similarity_threshold=0.9)
     with open("out_shots.json", 'w') as fh:
                 json.dump(shots, fh)
     print("Shot list written to out_shots.json")
